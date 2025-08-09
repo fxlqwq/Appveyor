@@ -154,8 +154,10 @@ test_script:
   - df -h
   - free -h
   - nproc
-  - echo "Java版本: $(java -version 2>&1 | head -1)"
-  - echo "JAVA_HOME: $JAVA_HOME"
+  - echo "Java版本 检查中..."
+  - java -version 2>&1 | head -1
+  - echo "JAVA_HOME 路径为:"
+  - echo $JAVA_HOME
   
   # 初始化 Android-x86 源码仓库
   - echo "正在初始化 repo..."
@@ -186,9 +188,12 @@ test_script:
   - echo "=== 构建环境检查 ==="
   - which java
   - which python
-  - echo "JAVA_HOME: $JAVA_HOME"
-  - echo "PATH: $PATH"
-  - echo "CPU 核心数: $(nproc)"
+  - echo "JAVA_HOME 为:"
+  - echo $JAVA_HOME
+  - echo "PATH 为:"
+  - echo $PATH
+  - echo "CPU 核心数为:"
+  - nproc
   
   # 开始构建 ISO 镜像 (使用更少的并行作业)
   - echo "开始构建 ISO 镜像..."
@@ -232,8 +237,10 @@ after_test:
           md5sum "$iso_file" > "${iso_file}.md5"
           echo "文件信息:"
           ls -lh "$iso_file"
-          echo "SHA256: $(cat ${iso_file}.sha256)"
-          echo "MD5: $(cat ${iso_file}.md5)"
+          echo "SHA256:"
+          cat ${iso_file}.sha256
+          echo "MD5:"
+          cat ${iso_file}.md5
         fi
       done
       cd /home/appveyor/android-x86
@@ -245,7 +252,8 @@ after_test:
 # 失败时的处理
 on_failure:
   - echo "=== 构建失败诊断信息 ==="
-  - echo "当前目录: $(pwd)"
+  - echo "当前目录:"
+  - pwd
   - ls -la
   
   - echo "=== 磁盘使用情况 ==="
@@ -256,7 +264,8 @@ on_failure:
   
   - echo "=== Java 信息 ==="
   - java -version 2>&1 || echo "Java 未安装或配置错误"
-  - echo "JAVA_HOME: $JAVA_HOME"
+  - echo "JAVA_HOME 环境变量:"
+  - echo $JAVA_HOME
   
   - echo "=== 最近的系统日志 ==="
   - sudo dmesg | tail -20 2>/dev/null || echo "无法读取系统日志"
