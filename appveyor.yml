@@ -2,7 +2,7 @@
 version: 1.0.{build}
 
 # 使用 Ubuntu 2004 镜像
-image: Ubuntu2004
+image: Ubuntu2404
 
 # 环境变量
 environment:
@@ -11,6 +11,7 @@ environment:
   CCACHE_DIR: /home/appveyor/.ccache
   USE_CCACHE: 1
   CCACHE_COMPRESS: 1
+  DEBIAN_FRONTEND: noninteractive
   
 # 克隆设置
 clone_depth: 1
@@ -20,6 +21,20 @@ clone_folder: /home/appveyor/android-build
 init:
   # 设置时区
   - sudo timedatectl set-timezone UTC
+  
+  # 完全清理所有可能有问题的软件源
+  - sudo rm -rf /etc/apt/sources.list.d/*
+  - sudo rm -rf /var/lib/apt/lists/*
+  
+  # 重新创建基础软件源列表
+  - |
+    sudo tee /etc/apt/sources.list > /dev/null <<EOF
+    deb http://archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse
+    deb http://archive.ubuntu.com/ubuntu/ focal-updates main restricted universe multiverse
+    deb http://archive.ubuntu.com/ubuntu/ focal-backports main restricted universe multiverse
+    deb http://security.ubuntu.com/ubuntu/ focal-security main restricted universe multiverse
+    EOF
+  
   # 增加虚拟内存
   - sudo fallocate -l 8G /swapfile
   - sudo chmod 600 /swapfile
@@ -28,17 +43,34 @@ init:
 
 # 构建前准备
 before_build:
-  # 修复软件源问题 - 移除有问题的 PostgreSQL 仓库
-  - sudo rm -f /etc/apt/sources.list.d/pgdg.list
+  # 清理并更新包索引
+  - sudo apt-get clean
+  - sudo apt-get update
   
-  # 更新系统包
-  - sudo apt-get update --fix-missing
+  # 安装基础构建工具
+  - sudo apt-get install -y --no-install-recommends software-properties-common apt-utils
   
-  # 安装必要的构建工具和依赖
-  - sudo apt-get install -y --no-install-recommends git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python3 python3-pip python-is-python3 openjdk-8-jdk
+  # 安装 Android 构建所需的基础工具
+  - sudo apt-get install -y --no-install-recommends git-core curl wget gnupg2 lsb-release
   
-  # 安装额外的构建依赖
-  - sudo apt-get install -y --no-install-recommends ccache bc rsync squashfs-tools dosfstools mtools syslinux-utils genisoimage
+  # 安装编译工具链
+  - sudo apt-get install -y --no-install-recommends build-essential gcc g++ make cmake
+  
+  # 安装 Android 特定的构建依赖
+  - sudo apt-get install -y --no-install-recommends flex bison gperf zip unzip
+  
+  # 安装多架构支持
+  - sudo apt-get install -y --no-install-recommends gcc-multilib g++-multilib libc6-dev-i386
+  
+  # 安装开发库
+  - sudo apt-get install -y --no-install-recommends zlib1g-dev lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc
+  
+  # 安装 Python 和 Java
+  - sudo apt-get install -y --no-install-recommends python3 python3-pip python-is-python3
+  - sudo apt-get install -y --no-install-recommends openjdk-8-jdk
+  
+  # 安装 ISO 构建工具
+  - sudo apt-get install -y --no-install-recommends ccache bc rsync squashfs-tools dosfstools mtools syslinux-utils genisoimage xorriso
   
   # 创建 bin 目录并安装 repo 工具
   - mkdir -p ~/bin
@@ -49,14 +81,25 @@ before_build:
   # 配置 Git
   - git config --global user.name "AppVeyor Android Build"
   - git config --global user.email "android-build@appveyor.com"
+  - git config --global color.ui false
   
   # 配置 ccache
-  - ccache -M 50G
+  - ccache -M 30G
   - ccache -z
   
-  # 设置 Java 环境
-  - export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
-  - export PATH=$JAVA_HOME/bin:$PATH
+  # 设置环境变量
+  - echo 'export PATH=~/bin:$PATH' >> ~/.bashrc
+  - echo 'export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64' >> ~/.bashrc
+  - echo 'export PATH=$JAVA_HOME/bin:$PATH' >> ~/.bashrc
+  - echo 'export USE_CCACHE=1' >> ~/.bashrc
+  - echo 'export CCACHE_DIR=/home/appveyor/.ccache' >> ~/.bashrc
+  - source ~/.bashrc
+  
+  # 检查工具版本
+  - java -version
+  - python3 --version
+  - git --version
+  - ccache --version
   
   # 创建构建目录
   - mkdir -p /home/appveyor/android-x86
@@ -66,56 +109,88 @@ before_build:
 build_script:
   - cd /home/appveyor/android-x86
   
+  # 设置环境变量
+  - export PATH=~/bin:$PATH
+  - export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+  - export PATH=$JAVA_HOME/bin:$PATH
+  - export USE_CCACHE=1
+  - export CCACHE_DIR=/home/appveyor/.ccache
+  
   # 检查磁盘空间
   - df -h
+  - free -h
   
-  # 初始化 Android-x86 源码仓库（使用较稳定的分支）
+  # 初始化 Android-x86 源码仓库
+  - echo "正在初始化 repo..."
   - repo init -u https://github.com/android-x86/manifest.git -b oreo-x86 --depth=1
   
-  # 同步源码（使用较少的并行作业以避免内存不足）
-  - repo sync --force-sync --no-clone-bundle --no-tags -j4
+  # 同步源码
+  - echo "正在同步源码..."
+  - repo sync --force-sync --no-clone-bundle --no-tags -j2 --current-branch
+  
+  # 检查源码是否同步成功
+  - ls -la
+  - echo "源码同步完成"
   
   # 设置构建环境
+  - echo "设置构建环境..."
   - source build/envsetup.sh
   
   # 选择构建目标
+  - echo "选择构建目标..."
   - lunch android_x86_64-userdebug
   
   # 清理之前的构建产物
+  - echo "清理构建环境..."
   - make clean
   
+  # 检查构建环境
+  - echo "检查构建环境..."
+  - which java
+  - which python
+  - echo $JAVA_HOME
+  - echo $PATH
+  
   # 开始构建 ISO 镜像
-  - make -j$(nproc) iso_img V=1
+  - echo "开始构建 ISO 镜像..."
+  - make -j2 iso_img
   
   # 检查构建结果
-  - ls -la out/target/product/x86_64/ || echo "构建目录不存在"
+  - echo "检查构建结果..."
+  - find out/target/product/x86_64/ -name "*.iso" -ls || echo "未找到 ISO 文件"
   
   # 重命名生成的ISO文件（如果存在）
   - |
-    if [ -f out/target/product/x86_64/android_x86_64.iso ]; then
-      mv out/target/product/x86_64/android_x86_64.iso out/target/product/x86_64/${ISO_NAME}-$(date +%Y%m%d).iso
-      echo "ISO 文件已重命名为: ${ISO_NAME}-$(date +%Y%m%d).iso"
-    else
-      echo "错误: ISO 文件未生成"
-      exit 1
-    fi
+    cd out/target/product/x86_64/
+    for iso_file in *.iso; do
+      if [ -f "$iso_file" ]; then
+        new_name="${ISO_NAME}-$(date +%Y%m%d).iso"
+        mv "$iso_file" "$new_name"
+        echo "ISO 文件已重命名为: $new_name"
+        ls -lh "$new_name"
+      fi
+    done
 
 # 构建后处理
 after_build:
   - cd /home/appveyor/android-x86
   
   # 检查构建产物
-  - ls -la out/target/product/x86_64/
+  - echo "最终构建产物:"
+  - find out/target/product/x86_64/ -name "*.iso" -exec ls -lh {} \; || echo "未找到 ISO 文件"
   
   # 计算ISO文件的校验和
   - cd out/target/product/x86_64/
   - |
     for iso_file in *.iso; do
       if [ -f "$iso_file" ]; then
+        echo "为 $iso_file 生成校验和..."
         sha256sum "$iso_file" > "${iso_file}.sha256"
         md5sum "$iso_file" > "${iso_file}.md5"
+        echo "文件信息:"
         ls -lh "$iso_file"
-        echo "文件大小: $(du -h "$iso_file" | cut -f1)"
+        echo "SHA256: $(cat ${iso_file}.sha256)"
+        echo "MD5: $(cat ${iso_file}.md5)"
       fi
     done
   
@@ -124,10 +199,25 @@ after_build:
 
 # 失败时的处理
 on_failure:
-  - echo "构建失败，显示构建日志..."
-  - tail -n 100 /home/appveyor/android-x86/out/verbose.log.gz || echo "无详细日志"
+  - echo "=== 构建失败诊断信息 ==="
+  - echo "当前目录内容:"
+  - pwd
+  - ls -la
+  
+  - echo "=== 磁盘使用情况 ==="
   - df -h
+  
+  - echo "=== 内存使用情况 ==="
   - free -h
+  
+  - echo "=== 环境变量 ==="
+  - env | grep -E "(JAVA|ANDROID|PATH|CCACHE)" || echo "未找到相关环境变量"
+  
+  - echo "=== 检查构建日志 ==="
+  - find /home/appveyor/android-x86 -name "*.log" -type f -exec echo "=== {} ===" \; -exec tail -50 {} \; || echo "未找到构建日志"
+  
+  - echo "=== 检查错误信息 ==="
+  - dmesg | tail -20 || echo "无系统错误信息"
 
 # 构建产物
 artifacts:
@@ -141,21 +231,9 @@ artifacts:
     name: Android_ISO_MD5
     type: File
 
-# 部署设置（可选）
-# deploy:
-#   - provider: GitHub
-#     auth_token:
-#       secure: YOUR_ENCRYPTED_GITHUB_TOKEN_HERE
-#     artifact: /.*\.iso/
-#     draft: true
-#     prerelease: true
-#     on:
-#       branch: main
-
 # 缓存设置
 cache:
   - /home/appveyor/.ccache -> appveyor.yml
-  - /home/appveyor/.gradle -> appveyor.yml
 
 # 构建矩阵
 matrix:
@@ -165,7 +243,7 @@ matrix:
 notifications:
   - provider: Email
     to:
-      - fxlqwq@example.com  # 替换为你的邮箱
+      - fxlqwq@example.com
     on_build_success: true
     on_build_failure: true
     on_build_status_changed: true
