@@ -2,7 +2,7 @@
 version: 1.0.{build}
 
 # 使用 Ubuntu 2004 镜像
-image: Ubuntu2404
+image: Ubuntu2204
 
 # 环境变量
 environment:
