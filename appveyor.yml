@@ -1,4 +1,4 @@
-# AppVeyor 构建配置 - Android 16 自定义构建 (修复超时设置)
+# AppVeyor 构建配置 - Android 16 自定义构建 (修复语法错误)
 version: 1.0.{build}
 
 image: Ubuntu2204
@@ -154,8 +154,6 @@ test_script:
   - |
     cat > iso_workspace/android/version-info.txt <<'VERSIONINFO'
     Android 16 x86_64 概念验证构建
-    构建时间: $(date)
-    构建者: AppVeyor CI/CD
     基于: AOSP Android 16 VanillaIceCream
     架构: x86_64
     
@@ -187,7 +185,8 @@ test_script:
   # 创建 ISO 镜像
   - echo "正在创建 Android 16 概念验证 ISO..."
   - |
-    iso_name="${ISO_NAME}-$(date +%Y%m%d-%H%M%S).iso"
+    current_date=$(date +%Y%m%d-%H%M%S)
+    iso_name="${ISO_NAME}-${current_date}.iso"
     if command -v xorriso >/dev/null 2>&1; then
       echo "使用 xorriso 创建 ISO..."
       xorriso -as mkisofs \
@@ -216,12 +215,14 @@ test_script:
   - echo "创建系统镜像文件..."
   - |
     cd system
-    tar -czf "../out/target/product/generic_x86_64/system-${ISO_NAME}-$(date +%Y%m%d).tar.gz" .
+    current_date=$(date +%Y%m%d)
+    tar -czf "../out/target/product/generic_x86_64/system-${ISO_NAME}-${current_date}.tar.gz" .
     cd ..
   
   # 创建构建信息文件
   - |
-    cat > out/target/product/generic_x86_64/build-info.txt <<'BUILDINFO'
+    current_time=$(date)
+    cat > out/target/product/generic_x86_64/build-info.txt <<BUILDINFO
     Android 16 概念验证构建信息
     ============================
     
@@ -230,6 +231,7 @@ test_script:
     架构: x86_64
     构建类型: 概念验证/演示
     构建系统: AppVeyor CI/CD
+    构建时间: $current_time
     
     包含的文件:
     - ISO 镜像文件 (可启动)
@@ -241,12 +243,13 @@ test_script:
   
   # 显示构建摘要
   - echo "=== 构建摘要 ==="
-  - echo "构建时间: $(date)"
+  - echo "构建时间:" 
+  - date
   - echo "Android 版本: 16.0 (VanillaIceCream)"
   - echo "目标架构: x86_64"
   - echo "构建类型: 概念验证"
   - echo "输出文件:"
-  - find out/ -type f -name "*.iso" -o -name "*.tar.gz" -o -name "*.txt" | while read file; do echo "  - $file ($(du -h "$file" | cut -f1))"; done
+  - find out/ -type f -name "*.iso" -o -name "*.tar.gz" -o -name "*.txt" | while read file; do echo "  - $file"; done
 
 after_test:
   - cd /home/appveyor/android16-workspace/android16-concept || cd /home/appveyor/android16-workspace
@@ -276,14 +279,19 @@ after_test:
   
   # 最终统计
   - echo "=== 构建完成统计 ==="
-  - echo "总文件数: $(find . -type f | wc -l)"
-  - echo "ISO 文件: $(find . -name "*.iso" | wc -l)"
-  - echo "压缩包文件: $(find . -name "*.tar.gz" | wc -l)"
-  - echo "校验和文件: $(find . -name "*.sha256" -o -name "*.md5" | wc -l)"
+  - echo "总文件数:" 
+  - find . -type f | wc -l
+  - echo "ISO 文件:"
+  - find . -name "*.iso" | wc -l
+  - echo "压缩包文件:"
+  - find . -name "*.tar.gz" | wc -l
+  - echo "校验和文件:"
+  - find . -name "*.sha256" -o -name "*.md5" | wc -l
 
 on_failure:
   - echo "=== 构建失败诊断信息 ==="
-  - echo "当前目录: $(pwd)"
+  - echo "当前目录:"
+  - pwd
   - ls -la 2>/dev/null || echo "无法列出目录内容"
   - echo "工作目录内容:"
   - find /home/appveyor -maxdepth 3 -type d 2>/dev/null | head -20 || echo "无法扫描工作目录"
@@ -295,8 +303,6 @@ on_failure:
   - java -version 2>&1 | head -3 || echo "Java 不可用"
   - echo "关键环境变量:"
   - env | grep -E "(JAVA_HOME|PATH|ANDROID)" | head -10 || echo "环境变量不可用"
-  - echo "最近的错误日志:"
-  - dmesg | tail -10 2>/dev/null || echo "无法读取系统日志"
 
 artifacts:
   - path: '**/*.iso'
