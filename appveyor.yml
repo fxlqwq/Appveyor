@@ -1,4 +1,4 @@
-# AppVeyor 构建配置 - Android 16 ISO 镜像构建
+# AppVeyor 构建配置 - Android x86 ISO 镜像构建
 version: 1.0.{build}
 
 # 使用 Ubuntu 22.04 镜像 (更大存储空间)
@@ -9,8 +9,8 @@ build: off
 
 # 环境变量
 environment:
-  ANDROID_VERSION: "16"
-  ISO_NAME: "android-16-x86_64"
+  ANDROID_VERSION: "froyo"
+  ISO_NAME: "android-froyo-x86_64"
   CCACHE_DIR: /home/appveyor/.ccache
   USE_CCACHE: 1
   CCACHE_COMPRESS: 1
@@ -159,9 +159,9 @@ test_script:
   - echo "JAVA_HOME 路径为:"
   - echo $JAVA_HOME
   
-  # 初始化 Android-x86 源码仓库 (使用最新的 android-14.0.0_r15 分支)
+  # 初始化 Android-x86 源码仓库 (使用 Android 2.2.3_r2.1 - Froyo)
   - echo "正在初始化 repo..."
-  - repo init -u https://github.com/android-x86/manifest.git -b android-14.0.0_r15 --depth=1 --partial-clone
+  - repo init -u https://github.com/android-x86/manifest.git -b android-2.2.3_r2.1 --depth=1 --partial-clone
   
   # 同步源码
   - echo "正在同步源码..."
@@ -176,9 +176,9 @@ test_script:
   - echo "设置构建环境..."
   - source build/envsetup.sh
   
-  # 选择构建目标
+  # 选择构建目标 (老版本可能使用不同的目标名称)
   - echo "选择构建目标..."
-  - lunch android_x86_64-userdebug
+  - lunch generic_x86-eng || lunch generic-eng
   
   # 清理之前的构建产物
   - echo "清理构建环境..."
@@ -197,26 +197,24 @@ test_script:
   
   # 开始构建 ISO 镜像 (使用更少的并行作业)
   - echo "开始构建 ISO 镜像..."
-  - make -j1 iso_img
+  - make -j1 iso_img || make -j1 installclean && make -j1
   
   # 检查构建结果
   - echo "检查构建结果..."
-  - find out/target/product/x86_64/ -name "*.iso" -ls 2>/dev/null || echo "未找到 ISO 文件"
+  - find out/ -name "*.iso" -ls 2>/dev/null || echo "未找到 ISO 文件"
+  - find out/ -name "*.img" -ls 2>/dev/null || echo "未找到 IMG 文件"
   
-  # 重命名生成的ISO文件（如果存在）
+  # 重命名生成的ISO/IMG文件（如果存在）
   - |
-    if [ -d "out/target/product/x86_64/" ]; then
-      cd out/target/product/x86_64/
-      for iso_file in *.iso; do
-        if [ -f "$iso_file" ]; then
-          new_name="${ISO_NAME}-$(date +%Y%m%d).iso"
-          mv "$iso_file" "$new_name"
-          echo "ISO 文件已重命名为: $new_name"
-          ls -lh "$new_name"
-        fi
-      done
-      cd /home/appveyor/android-x86
-    fi
+    for iso_file in $(find out/ -name "*.iso" 2>/dev/null); do
+      if [ -f "$iso_file" ]; then
+        dir_name=$(dirname "$iso_file")
+        new_name="${dir_name}/${ISO_NAME}-$(date +%Y%m%d).iso"
+        mv "$iso_file" "$new_name"
+        echo "ISO 文件已重命名为: $new_name"
+        ls -lh "$new_name"
+      fi
+    done
 
 # 构建后处理
 after_test:
@@ -224,27 +222,24 @@ after_test:
   
   # 检查构建产物
   - echo "=== 最终构建产物 ==="
-  - find out/target/product/x86_64/ -name "*.iso" -exec ls -lh {} \; 2>/dev/null || echo "未找到 ISO 文件"
+  - find out/ -name "*.iso" -exec ls -lh {} \; 2>/dev/null || echo "未找到 ISO 文件"
+  - find out/ -name "*.img" -exec ls -lh {} \; 2>/dev/null || echo "未找到 IMG 文件"
   
   # 计算ISO文件的校验和
   - |
-    if [ -d "out/target/product/x86_64/" ]; then
-      cd out/target/product/x86_64/
-      for iso_file in *.iso; do
-        if [ -f "$iso_file" ]; then
-          echo "为 $iso_file 生成校验和..."
-          sha256sum "$iso_file" > "${iso_file}.sha256"
-          md5sum "$iso_file" > "${iso_file}.md5"
-          echo "文件信息:"
-          ls -lh "$iso_file"
-          echo "SHA256:"
-          cat ${iso_file}.sha256
-          echo "MD5:"
-          cat ${iso_file}.md5
-        fi
-      done
-      cd /home/appveyor/android-x86
-    fi
+    for iso_file in $(find out/ -name "*.iso" 2>/dev/null); do
+      if [ -f "$iso_file" ]; then
+        echo "为 $iso_file 生成校验和..."
+        sha256sum "$iso_file" > "${iso_file}.sha256"
+        md5sum "$iso_file" > "${iso_file}.md5"
+        echo "文件信息:"
+        ls -lh "$iso_file"
+        echo "SHA256:"
+        cat ${iso_file}.sha256
+        echo "MD5:"
+        cat ${iso_file}.md5
+      fi
+    done
   
   # 显示 ccache 统计
   - ccache -s || echo "ccache 统计获取失败"
@@ -275,14 +270,17 @@ on_failure:
 
 # 构建产物
 artifacts:
-  - path: 'android-x86/out/target/product/x86_64/*.iso'
+  - path: 'android-x86/out/**/*.iso'
     name: Android_ISO_Images
     type: File
-  - path: 'android-x86/out/target/product/x86_64/*.sha256'
+  - path: 'android-x86/out/**/*.sha256'
     name: Android_ISO_Checksums
     type: File
-  - path: 'android-x86/out/target/product/x86_64/*.md5'
+  - path: 'android-x86/out/**/*.md5'
     name: Android_ISO_MD5
+    type: File
+  - path: 'android-x86/out/**/*.img'
+    name: Android_IMG_Images
     type: File
 
 # 缓存设置
