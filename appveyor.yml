@@ -159,9 +159,9 @@ test_script:
   - echo "JAVA_HOME 路径为:"
   - echo $JAVA_HOME
   
-  # 初始化 Android-x86 源码仓库
+  # 初始化 Android-x86 源码仓库 (使用最新的 android-14.0.0_r15 分支)
   - echo "正在初始化 repo..."
-  - repo init -u https://github.com/android-x86/manifest.git -b oreo-x86 --depth=1 --partial-clone
+  - repo init -u https://github.com/android-x86/manifest.git -b android-14.0.0_r15 --depth=1 --partial-clone
   
   # 同步源码
   - echo "正在同步源码..."
