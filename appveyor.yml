@@ -1,0 +1,3 @@
+image: Ubuntu2204
+build_script:
+- df -h
