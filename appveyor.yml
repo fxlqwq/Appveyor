@@ -4,6 +4,9 @@ version: 1.0.{build}
 # 使用 Ubuntu 22.04 镜像 (更大存储空间)
 image: Ubuntu2204
 
+# 设置构建模式为脚本模式
+build: off
+
 # 环境变量
 environment:
   ANDROID_VERSION: "16"
@@ -41,8 +44,8 @@ init:
   - sudo mkswap /swapfile
   - sudo swapon /swapfile
 
-# 构建前准备
-before_build:
+# 安装阶段
+install:
   # 清理并更新包索引
   - sudo apt-get clean
   - sudo apt-get update
@@ -127,10 +130,9 @@ before_build:
   
   # 创建构建目录
   - mkdir -p /home/appveyor/android-x86
-  - cd /home/appveyor/android-x86
 
-# 构建脚本
-build_script:
+# 测试脚本阶段（我们在这里进行实际构建）
+test_script:
   - cd /home/appveyor/android-x86
   
   # 设置环境变量
@@ -198,18 +200,21 @@ build_script:
   
   # 重命名生成的ISO文件（如果存在）
   - |
-    cd out/target/product/x86_64/ 2>/dev/null || exit 1
-    for iso_file in *.iso; do
-      if [ -f "$iso_file" ]; then
-        new_name="${ISO_NAME}-$(date +%Y%m%d).iso"
-        mv "$iso_file" "$new_name"
-        echo "ISO 文件已重命名为: $new_name"
-        ls -lh "$new_name"
-      fi
-    done
+    if [ -d "out/target/product/x86_64/" ]; then
+      cd out/target/product/x86_64/
+      for iso_file in *.iso; do
+        if [ -f "$iso_file" ]; then
+          new_name="${ISO_NAME}-$(date +%Y%m%d).iso"
+          mv "$iso_file" "$new_name"
+          echo "ISO 文件已重命名为: $new_name"
+          ls -lh "$new_name"
+        fi
+      done
+      cd /home/appveyor/android-x86
+    fi
 
 # 构建后处理
-after_build:
+after_test:
   - cd /home/appveyor/android-x86
   
   # 检查构建产物
@@ -231,6 +236,7 @@ after_build:
           echo "MD5: $(cat ${iso_file}.md5)"
         fi
       done
+      cd /home/appveyor/android-x86
     fi
   
   # 显示 ccache 统计
@@ -260,13 +266,13 @@ on_failure:
 
 # 构建产物
 artifacts:
-  - path: 'out/target/product/x86_64/*.iso'
+  - path: 'android-x86/out/target/product/x86_64/*.iso'
     name: Android_ISO_Images
     type: File
-  - path: 'out/target/product/x86_64/*.sha256'
+  - path: 'android-x86/out/target/product/x86_64/*.sha256'
     name: Android_ISO_Checksums
     type: File
-  - path: 'out/target/product/x86_64/*.md5'
+  - path: 'android-x86/out/target/product/x86_64/*.md5'
     name: Android_ISO_MD5
     type: File
 
@@ -288,5 +294,4 @@ notifications:
     on_build_status_changed: true
 
 # 构建超时设置（8小时）
-build:
-  verbosity: minimal
+max_jobs: 1
